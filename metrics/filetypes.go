@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"fmt"
 	"io"
 	"math/rand"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 type Filetypes struct{}
 
 func (*Filetypes) IsReadOnly() bool {
-	return true
+	return false
 }
 
 func (*Filetypes) CalculateMetrics(repo *git.Worktree) (map[string]int, error) {
@@ -104,9 +103,14 @@ func (*Filetypes) RenderGraph(samples []lib.Sample, output io.Writer) error {
 		allFiletypes = append(allFiletypes, filetype)
 	}
 	sort.Slice(allFiletypes, func(i, j int) bool {
-		return samples[len(samples)-1].Measurements[allFiletypes[i]] < samples[len(samples)-1].Measurements[allFiletypes[j]]
+		iCount := samples[len(samples)-1].Measurements[allFiletypes[i]]
+		jCount := samples[len(samples)-1].Measurements[allFiletypes[j]]
+		if iCount != jCount {
+			return iCount > jCount
+		}
+
+		return allFiletypes[i] < allFiletypes[j]
 	})
-	fmt.Println(allFiletypes)
 
 	datasets := map[string]xyPairs{}
 	// make sure there is a dataset for each filetype ever seen
@@ -116,8 +120,6 @@ func (*Filetypes) RenderGraph(samples []lib.Sample, output io.Writer) error {
 
 	var commitNum int
 	for _, sample := range samples {
-		// fmt.Println(sample)
-		// fmt.Println(sample.Commit.Message[:lib.Min(20, len(sample.Commit.Message)-1)], sample.Commit.Hash)
 		var totalFiles float64
 		for _, count := range sample.Measurements {
 			totalFiles += float64(count)
@@ -138,8 +140,13 @@ func (*Filetypes) RenderGraph(samples []lib.Sample, output io.Writer) error {
 	chart := &chartjs.Chart{
 		Label: "By filetype",
 		Options: chartjs.Options{
+			Option: chartjs.Option{
+				Responsive: chartjs.False,
+			},
 			Tooltip: &chartjs.Tooltip{
-				Enabled: types.True,
+				Enabled:   chartjs.True,
+				Intersect: chartjs.False,
+				Mode:      "nearest",
 			},
 		},
 	}
@@ -147,24 +154,35 @@ func (*Filetypes) RenderGraph(samples []lib.Sample, output io.Writer) error {
 		dataset := datasets[filetype]
 		color := randColor()
 		chart.AddDataset(chartjs.Dataset{
-			Data:            dataset,
-			Type:            chartjs.Line,
-			Label:           filetype,
-			BorderColor:     color,
-			BackgroundColor: color,
-			//  Fill: types.False,
-			// 			SteppedLine:     types.True,
+			Data:             dataset,
+			Type:             chartjs.Line,
+			Label:            filetype,
+			BorderColor:      color,
+			BackgroundColor:  color,
+			PointRadius:      1,
+			PointHoverRadius: 5,
+			PointHitRadius:   1,
 		})
 	}
 
 	chart.AddXAxis(chartjs.Axis{
 		Type:     chartjs.Linear,
 		Position: chartjs.Bottom,
+		Tick: &chartjs.Tick{
+			Min: 0,
+			Max: float64(len(samples) - 1),
+		},
+		Label:   "Commit number",
+		Display: chartjs.True,
 	})
 	chart.AddYAxis(chartjs.Axis{
-		Type:     chartjs.Linear,
-		Position: chartjs.Left,
+		Type:      chartjs.Linear,
+		Position:  chartjs.Left,
+		GridLines: chartjs.True,
 	})
 
-	return chartjs.SaveCharts(output, nil, *chart)
+	return chartjs.SaveCharts(output, map[string]interface{}{
+		"width":  1280,
+		"height": 720,
+	}, *chart)
 }

@@ -53,25 +53,41 @@ func main() {
 
 	var repo *git.Repository
 	var err error
+	fmt.Print("Cloning repo...")
 	if metricCalculator.IsReadOnly() {
+		repo, err = lib.OpenRepoInMemory(repoPath)
+	} else {
 		tempDir, err := ioutil.TempDir("", "git-metrics")
 		if err != nil {
 			exit("failed to create temp directory: %s", err)
 		}
+		defer func() {
+			err := os.RemoveAll(tempDir)
+			if err != nil {
+				exit("failed to remove temporary directory: %s", tempDir)
+			}
+		}()
+
 		repo, err = lib.MakeTempCopyOfRepo(repoPath, tempDir)
-	} else {
-		repo, err = lib.OpenRepoInMemory(repoPath)
 	}
 	if err != nil {
 		exit("failed to copy repo: %s", err)
 	}
-	fmt.Println("Found repo at path", repoPath)
+	fmt.Println("Done")
 
+	fmt.Print("Calculating metrics...")
 	samples, err := lib.CalculateMetrics(repo, metricCalculator)
 	if err != nil {
 		exit("failed to calculate samples: %s", err)
 	}
+	fmt.Println("Done")
+
 	f, err := os.Create(resultFile)
+	if err != nil {
+		exit("failed to create result file: %s", err)
+	}
 	defer f.Close()
+	fmt.Print("Rendering graph...")
 	metricCalculator.RenderGraph(samples, f)
+	fmt.Println("Done")
 }
